@@ -1,20 +1,62 @@
-version: "3.9"
+version: '3.8'
 
 services:
-  mqtt_subscriber:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: mqtt_subscriber
-    restart: unless-stopped
-    volumes:
-      - mqtt_data:/app/data
+  mqtt-subscriber:
+    build: .
+    container_name: rust-mqtt-subscriber
     environment:
-      - MQTT_BROKER
-      - MQTT_PORT
-      - MQTT_TOPIC
-      - MQTT_USERNAME
-      - MQTT_PASSWORD
+      - MQTT_BROKER_URL=${MQTT_BROKER_URL:-mosquitto}
+      - MQTT_PORT=${MQTT_PORT:-1883}
+      - MQTT_USERNAME=${MQTT_USERNAME:-}
+      - MQTT_PASSWORD=${MQTT_PASSWORD:-}
+      - MQTT_TOPIC=${MQTT_TOPIC:-#}
+      - MQTT_QOS=${MQTT_QOS:-1}
+      - MQTT_CLIENT_ID=${MQTT_CLIENT_ID:-rust-mqtt-subscriber}
+      - DATABASE_URL=${DATABASE_URL:-postgres://postgres:password@postgres:5432/mqtt_data}
+      - RUST_LOG=${RUST_LOG:-info}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - mqtt-network
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: mqtt-postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=mqtt_data
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    networks:
+      - mqtt-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto-broker
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf
+    networks:
+      - mqtt-network
+
+networks:
+  mqtt-network:
+    driver: bridge
 
 volumes:
-  mqtt_data:
+  postgres-data:

@@ -1,9 +1,17 @@
 [package]
-name = "mqtt_subscriber"
+name = "mqtt-subscriber"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-rumqttc = "0.21"
-rusqlite = { version = "0.31", features = ["bundled"] }
-chrono = "0.4"
+tokio = { version = "1.0", features = ["full"] }
+rumqttc = "0.22"  # Simple version without features
+sqlx = { version = "0.6", features = ["runtime-tokio-native-tls", "postgres", "chrono"] }
+dotenv = "0.15"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+log = "0.4"
+env_logger = "0.10"
+anyhow = "1.0"
+thiserror = "1.0"

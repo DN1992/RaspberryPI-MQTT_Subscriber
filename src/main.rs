@@ -1,70 +1,42 @@
-use std::env;
-use rumqttc::{MqttOptions, Client, QoS, Event, Incoming};
-use rusqlite::{params, Connection};
-use chrono::Utc;
+mod config;
+mod database;
+mod mqtt;
 
-fn main() {
-    // -------- Read environment variables --------
-    let broker = env::var("MQTT_BROKER").unwrap_or_else(|_| "localhost".to_string());
-    let port: u16 = env::var("MQTT_PORT")
-        .unwrap_or_else(|_| "1883".to_string())
-        .parse()
-        .expect("Invalid MQTT_PORT");
+use anyhow::Result;
+use log::{info, error};
+use tokio::signal;
 
-    let topic = env::var("MQTT_TOPIC").unwrap_or_else(|_| "test/topic".to_string());
-    let username = env::var("MQTT_USERNAME").unwrap_or_default();
-    let password = env::var("MQTT_PASSWORD").unwrap_or_default();
-
-    println!("MQTT broker: {}:{}", broker, port);
-    println!("Subscribing to topic: {}", topic);
-
-    // -------- SQLite setup --------
-    let conn = Connection::open("data/mqtt_data.db")
-        .expect("Failed to open SQLite database");
-
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT NOT NULL,
-            topic TEXT NOT NULL,
-            payload TEXT NOT NULL
-        )",
-        [],
-    ).expect("Failed to create table");
-
-    // -------- MQTT setup --------
-    let mut mqttoptions = MqttOptions::new("rust_mqtt_subscriber", broker, port);
-
-    if !username.is_empty() {
-        mqttoptions.set_credentials(username, password);
-    }
-
-    mqttoptions.set_keep_alive(10);
-
-    let (mut client, mut connection) = Client::new(mqttoptions, 10);
-    client.subscribe(&topic, QoS::AtMostOnce)
-        .expect("Failed to subscribe");
-
-    println!("Subscriber started. Waiting for messages…");
-
-    // -------- Main loop --------
-    for event in connection.iter() {
-        if let Ok(Event::Incoming(Incoming::Publish(p))) = event {
-            let payload = String::from_utf8_lossy(&p.payload);
-            let timestamp = Utc::now().to_rfc3339();
-
-            println!(
-                "[{}] {} → {}",
-                timestamp,
-                p.topic,
-                payload
-            );
-
-            conn.execute(
-                "INSERT INTO messages (timestamp, topic, payload)
-                 VALUES (?1, ?2, ?3)",
-                params![timestamp, p.topic, payload],
-            ).expect("Failed to insert message");
+#[tokio::main]
+async fn main() -> Result<()> {
+    env_logger::init();
+    info!("Starting MQTT Subscriber Service");
+    
+    let config = config::Config::from_env()?;
+    info!("Configuration loaded successfully");
+    
+    let db_pool = database::init_db(&config.database_url).await?;
+    info!("Database connection established");
+    
+    database::run_migrations(&db_pool).await?;
+    info!("Database migrations completed");
+    
+    let mut mqtt_client = mqtt::MqttClient::new(&config, db_pool.clone());
+    
+    let mqtt_handle = tokio::spawn(async move {
+        if let Err(e) = mqtt_client.subscribe_and_listen().await {
+            error!("MQTT client error: {}", e);
+        }
+    });
+    
+    tokio::select! {
+        _ = signal::ctrl_c() => {
+            info!("Received shutdown signal");
+        }
+        _ = mqtt_handle => {
+            info!("MQTT task completed");
         }
     }
+    
+    info!("Shutting down MQTT Subscriber Service");
+    Ok(())
 }
