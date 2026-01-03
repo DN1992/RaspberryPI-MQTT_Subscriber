@@ -1,0 +1,20 @@
+version: "3.9"
+
+services:
+  mqtt_subscriber:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mqtt_subscriber
+    restart: unless-stopped
+    volumes:
+      - mqtt_data:/app/data
+    environment:
+      - MQTT_BROKER
+      - MQTT_PORT
+      - MQTT_TOPIC
+      - MQTT_USERNAME
+      - MQTT_PASSWORD
+
+volumes:
+  mqtt_data:

@@ -1,0 +1,9 @@
+[package]
+name = "mqtt_subscriber"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rumqttc = "0.21"
+rusqlite = { version = "0.31", features = ["bundled"] }
+chrono = "0.4"
